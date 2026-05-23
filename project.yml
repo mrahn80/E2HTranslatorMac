@@ -19,6 +19,8 @@ targets:
         INFOPLIST_KEY_NSPrincipalClass: NSApplication
         PRODUCT_NAME: E2H
         INFOPLIST_KEY_CFBundleDisplayName: E2H
+        MARKETING_VERSION: "0.1"
+        CURRENT_PROJECT_VERSION: "1"
   E2HTranslatorMacTests:
     type: bundle.unit-test
     platform: macOS
