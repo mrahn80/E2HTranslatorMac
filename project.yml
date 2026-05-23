@@ -17,6 +17,8 @@ targets:
         SWIFT_VERSION: "5.0"
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_NSPrincipalClass: NSApplication
+        PRODUCT_NAME: E2H
+        INFOPLIST_KEY_CFBundleDisplayName: E2H
   E2HTranslatorMacTests:
     type: bundle.unit-test
     platform: macOS
