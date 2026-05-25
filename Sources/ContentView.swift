@@ -55,7 +55,7 @@ struct ContentView: View {
                                 .padding(.top, 4)
                                 .padding(.leading, 4)
                         }
-                        MacTextEditor(text: $inputText)
+                        MacTextEditor(text: $inputText, isReadOnly: false, syncID: "E2HTranslationEditor")
                             .padding(8)
                             .background(Color.white)
                             .cornerRadius(12)
@@ -71,16 +71,12 @@ struct ContentView: View {
                                 .padding(.top, 4)
                                 .padding(.leading, 4)
                         }
-                        TextEditor(text: $outputText)
-                            .font(.system(size: 15))
+                        MacTextEditor(text: $outputText, isReadOnly: true, syncID: "E2HTranslationEditor")
                             .padding(8)
-                            .scrollContentBackground(.hidden)
                             .background(Color.white)
-                            .foregroundColor(.primary)
                             .cornerRadius(12)
                             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.black.opacity(0.05), lineWidth: 1))
                             .shadow(color: Color.black.opacity(0.03), radius: 5, x: 0, y: 2)
-                            .disabled(true)
                     }
                 }
             }
@@ -176,9 +172,11 @@ struct ContentView: View {
     }
 }
 
-// MARK: - Custom Text Editor to Handle Keyboard Arrow Keys Correctly on macOS
+// MARK: - Custom Text Editor to Handle Keyboard Arrow Keys and Scroll Synchronization Correctly on macOS
 struct MacTextEditor: NSViewRepresentable {
     @Binding var text: String
+    var isReadOnly: Bool = false
+    var syncID: String? = nil
     
     func makeNSView(context: Context) -> NSScrollView {
         let scrollView = NSScrollView()
@@ -192,7 +190,7 @@ struct MacTextEditor: NSViewRepresentable {
         textView.autoresizingMask = [.width]
         textView.isVerticallyResizable = true
         textView.isHorizontallyResizable = false
-        textView.isEditable = true
+        textView.isEditable = !isReadOnly
         textView.isSelectable = true
         textView.delegate = context.coordinator
         
@@ -208,6 +206,29 @@ struct MacTextEditor: NSViewRepresentable {
         textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
         
         scrollView.documentView = textView
+        context.coordinator.scrollView = scrollView
+        
+        // Setup scroll synchronization if syncID is provided
+        if let syncID = syncID {
+            scrollView.contentView.postsBoundsChangedNotifications = true
+            
+            // Observe standard bounds change notification
+            NotificationCenter.default.addObserver(
+                context.coordinator,
+                selector: #selector(Coordinator.scrollViewContentBoundsDidChange(_:)),
+                name: NSView.boundsDidChangeNotification,
+                object: scrollView.contentView
+            )
+            
+            // Observe our custom scroll synchronization notification
+            NotificationCenter.default.addObserver(
+                context.coordinator,
+                selector: #selector(Coordinator.handleScrollSyncNotification(_:)),
+                name: NSNotification.Name("E2HScrollSync"),
+                object: nil
+            )
+        }
+        
         return scrollView
     }
     
@@ -224,6 +245,8 @@ struct MacTextEditor: NSViewRepresentable {
     
     class Coordinator: NSObject, NSTextViewDelegate {
         var parent: MacTextEditor
+        weak var scrollView: NSScrollView?
+        private var isSyncing = false
         
         init(_ parent: MacTextEditor) {
             self.parent = parent
@@ -234,6 +257,41 @@ struct MacTextEditor: NSViewRepresentable {
             DispatchQueue.main.async {
                 self.parent.text = textView.string
             }
+        }
+        
+        @objc func scrollViewContentBoundsDidChange(_ notification: Notification) {
+            guard let syncID = parent.syncID,
+                  let clipView = notification.object as? NSClipView,
+                  !isSyncing else { return }
+            
+            let origin = clipView.bounds.origin
+            
+            // Post custom notification to synchronize other scroll views
+            NotificationCenter.default.post(
+                name: NSNotification.Name("E2HScrollSync"),
+                object: clipView,
+                userInfo: ["syncID": syncID, "origin": origin]
+            )
+        }
+        
+        @objc func handleScrollSyncNotification(_ notification: Notification) {
+            guard let syncID = parent.syncID,
+                  let userInfo = notification.userInfo,
+                  let receivedSyncID = userInfo["syncID"] as? String,
+                  receivedSyncID == syncID,
+                  let origin = userInfo["origin"] as? NSPoint,
+                  let sendingClipView = notification.object as? NSClipView,
+                  let destScrollView = self.scrollView,
+                  sendingClipView != destScrollView.contentView else { return }
+            
+            isSyncing = true
+            destScrollView.contentView.scroll(to: origin)
+            destScrollView.reflectScrolledClipView(destScrollView.contentView)
+            isSyncing = false
+        }
+        
+        deinit {
+            NotificationCenter.default.removeObserver(self)
         }
     }
 }
