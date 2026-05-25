@@ -1,5 +1,6 @@
 import SwiftUI
 import Combine
+import AppKit
 
 struct ContentView: View {
     @State private var inputText: String = ""
@@ -54,12 +55,9 @@ struct ContentView: View {
                                 .padding(.top, 4)
                                 .padding(.leading, 4)
                         }
-                        TextEditor(text: $inputText)
-                            .font(.system(size: 15))
+                        MacTextEditor(text: $inputText)
                             .padding(8)
-                            .scrollContentBackground(.hidden)
                             .background(Color.white)
-                            .foregroundColor(.primary)
                             .cornerRadius(12)
                             .overlay(RoundedRectangle(cornerRadius: 12).stroke(Color.black.opacity(0.05), lineWidth: 1))
                             .shadow(color: Color.black.opacity(0.03), radius: 5, x: 0, y: 2)
@@ -175,5 +173,78 @@ struct ContentView: View {
                 statusText = "Status: Ready"
             }
         }
+    }
+}
+
+// MARK: - Custom Text Editor to Handle Keyboard Arrow Keys Correctly on macOS
+struct MacTextEditor: NSViewRepresentable {
+    @Binding var text: String
+    
+    func makeNSView(context: Context) -> NSScrollView {
+        let scrollView = NSScrollView()
+        scrollView.drawsBackground = false
+        scrollView.borderType = .noBorder
+        scrollView.hasVerticalScroller = true
+        scrollView.hasHorizontalScroller = false
+        scrollView.autohidesScrollers = true
+        
+        let textView = CustomTextView(frame: .zero)
+        textView.autoresizingMask = [.width]
+        textView.isVerticallyResizable = true
+        textView.isHorizontallyResizable = false
+        textView.isEditable = true
+        textView.isSelectable = true
+        textView.delegate = context.coordinator
+        
+        textView.font = NSFont.systemFont(ofSize: 15)
+        textView.textColor = .textColor
+        textView.drawsBackground = false
+        textView.allowsUndo = true
+        textView.isRichText = false
+        
+        // Add minimal insets to make the text align nicely with the layout
+        textView.textContainerInset = NSSize(width: 8, height: 8)
+        textView.textContainer?.widthTracksTextView = true
+        textView.textContainer?.containerSize = NSSize(width: 0, height: CGFloat.greatestFiniteMagnitude)
+        
+        scrollView.documentView = textView
+        return scrollView
+    }
+    
+    func updateNSView(_ nsView: NSScrollView, context: Context) {
+        guard let textView = nsView.documentView as? CustomTextView else { return }
+        if textView.string != text {
+            textView.string = text
+        }
+    }
+    
+    func makeCoordinator() -> Coordinator {
+        Coordinator(self)
+    }
+    
+    class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: MacTextEditor
+        
+        init(_ parent: MacTextEditor) {
+            self.parent = parent
+        }
+        
+        func textDidChange(_ notification: Notification) {
+            guard let textView = notification.object as? CustomTextView else { return }
+            DispatchQueue.main.async {
+                self.parent.text = textView.string
+            }
+        }
+    }
+}
+
+class CustomTextView: NSTextView {
+    override func keyDown(with event: NSEvent) {
+        // Explicitly handle Up Arrow key (keyCode 126) to move the cursor up
+        if event.keyCode == 126 {
+            self.moveUp(nil)
+            return
+        }
+        super.keyDown(with: event)
     }
 }
